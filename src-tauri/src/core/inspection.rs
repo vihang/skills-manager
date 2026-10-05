@@ -204,6 +204,8 @@ fn inspect_skill(dir: &Path, root: &Path) -> Result<SkillInspection> {
         if !entry.file_type().is_file() {
             skill.findings.push(finding(path, "unsupported_entry")); complete = false; continue;
         }
+        // Presence is independent of read permission or the hashing budget.
+        if path == "evals/evals.json" { skill.evals_present = true; }
         let result = (|| -> Result<(Vec<u8>, u64, u8)> {
             // Re-check type before opening; never intentionally follow a link.
             let metadata = fs::symlink_metadata(entry.path())?;
@@ -231,7 +233,6 @@ fn inspect_skill(dir: &Path, root: &Path) -> Result<SkillInspection> {
             Ok((digest, bytes, exec)) => {
                 skill.file_count += 1;
                 skill.payload_bytes += bytes;
-                if path == "evals/evals.json" { skill.evals_present = true; }
                 records.insert(path, (digest, bytes, exec));
             }
             Err(_) => { skill.findings.push(finding(path, "unreadable_or_oversized_file")); complete = false; }
@@ -419,6 +420,20 @@ mod tests {
         let report = inspect(root.path(), None).unwrap();
         assert!(!report.complete());
         assert!(report.source.skills[0].payload_sha256.is_none());
+    }
+
+    #[test]
+    fn oversized_evaluation_is_present_even_when_payload_cannot_be_hashed() {
+        let root = tempdir().unwrap();
+        let dir = skill(root.path(), "one", "one");
+        fs::create_dir(dir.join("evals")).unwrap();
+        fs::File::create(dir.join("evals/evals.json")).unwrap()
+            .set_len(MAX_PAYLOAD_BYTES + 1).unwrap();
+        let report = inspect(root.path(), None).unwrap();
+        assert!(!report.complete());
+        assert!(report.source.skills[0].evals_present);
+        assert!(report.source.skills[0].payload_sha256.is_none());
+        assert!(report.source.skills[0].findings.iter().any(|f| f.path == "evals/evals.json"));
     }
 
     #[cfg(unix)]
