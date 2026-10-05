@@ -454,6 +454,18 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn relative_paths_reject_non_utf8_without_lossy_identity() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+        let root = Path::new("/");
+        let path = root.join(OsString::from_vec(vec![0xff]));
+        assert!(relative(&path, root).is_err());
+    }
+
+    // APFS rejects invalid-byte names before inspection can encounter them.
+    // Linux filesystems permit them, so exercise the actual traversal there.
+    #[cfg(target_os = "linux")]
+    #[test]
     fn non_utf8_paths_preserve_known_inventory_but_never_receive_a_hash() {
         use std::ffi::OsString;
         use std::os::unix::ffi::OsStringExt;
