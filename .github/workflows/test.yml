@@ -47,6 +47,9 @@ jobs:
       - name: Run tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      - name: Smoke-test state-free inspection CLI
+        run: cargo run --manifest-path src-tauri/Cargo.toml --bin skills-manager-cli -- --json inspect --root skills/manage-skills --fail-on-findings
+
       # vctip.exe (VC++ telemetry) lingers after cl.exe and locks files in
       # target/, which intermittently breaks the post-job cache save and
       # marks a green run red (see the save-if note in release.yml). Kill
