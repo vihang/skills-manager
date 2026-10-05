@@ -26,6 +26,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
+    /// Inspect explicit roots without initializing manager state or deploying skills.
+    Inspect(InspectArgs),
     Repo(RepoArgs),
     #[command(name = "agents", visible_alias = "tools")]
     Tools(ToolsArgs),
@@ -33,6 +35,19 @@ enum Commands {
     #[command(alias = "scenarios")]
     Presets(PresetArgs),
     Git(GitArgs),
+}
+
+#[derive(Args, Debug)]
+struct InspectArgs {
+    /// Canonical skill root to inspect (may also be a single skill directory).
+    #[arg(long)]
+    root: PathBuf,
+    /// Compare a deployed copy against the source by relative directory.
+    #[arg(long)]
+    compare: Option<PathBuf>,
+    /// Return a failure status for metadata findings, duplicate names, or drift.
+    #[arg(long)]
+    fail_on_findings: bool,
 }
 
 #[derive(Args, Debug)]
@@ -704,6 +719,23 @@ fn main() {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
+    // Must run before any app-state, settings, DB, repo-lock, or logging setup.
+    // --skills-root belongs to the managed library path and is forbidden here.
+    if let Commands::Inspect(args) = &cli.command {
+        if cli.skills_root.is_some() {
+            bail!("inspect uses --root; --skills-root initializes managed-library state");
+        }
+        let report = app_lib::core::inspection::inspect(&args.root, args.compare.as_deref())?;
+        // Always export a versioned JSON report, including incomplete inventories.
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        if !report.complete() {
+            bail!("inspection incomplete; see report findings");
+        }
+        if args.fail_on_findings && report.has_findings() {
+            bail!("inspection findings or deployment drift; see report");
+        }
+        return Ok(());
+    }
     if let Commands::Repo(RepoArgs {
         command: command @ (RepoCommand::SetPath { .. } | RepoCommand::ResetPath),
     }) = &cli.command
@@ -732,6 +764,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     let store = app_state::initialize_cli_store()?;
 
     match cli.command {
+        Commands::Inspect(_) => unreachable!("inspection returns before store initialization"),
         Commands::Repo(args) => run_repo(args, &store, cli.json),
         Commands::Tools(args) => run_tools(args, &store, cli.json),
         Commands::Skills(args) => run_skills(args, &store, cli.json),
@@ -3113,6 +3146,24 @@ fn print_json<T: Serialize>(value: &T, json: bool) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn inspection_does_not_initialize_manager_state_and_rejects_library_flags() {
+        use super::*;
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("skill");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("SKILL.md"), "---\nname: example\ndescription: Example\n---\n").unwrap();
+        let manager = fixture.path().join("manager-must-stay-absent");
+        central_repo::set_runtime_base_dir_override(Some(manager.clone()));
+        let make_cli = |skills_root| Cli { json: true, skills_root, command: Commands::Inspect(InspectArgs {
+            root: root.clone(), compare: None, fail_on_findings: true,
+        }) };
+        assert!(run(make_cli(None)).is_ok());
+        assert!(run(make_cli(Some(root.clone()))).is_err());
+        assert!(!manager.exists(), "inspect must not create a DB, logs, lock, or manager directory");
+        central_repo::set_runtime_base_dir_override(None);
+    }
+
     /// An agent has to name the directory that is in the way and say the
     /// contents survived. Flattening the refusal into one sentence is what
     /// made that impossible, so the paths must reach the envelope as data.
