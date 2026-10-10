@@ -58,6 +58,11 @@
 
 ## Features
 
+> **Fork addition:** [Governed inspection](docs/governed-inspection.md) adds
+> `skills-manager-cli inspect --root <path> [--compare <path>]`, a state-free
+> JSON inventory path for externally managed skills. The ordinary desktop app
+> and other CLI commands retain their existing mutable behavior.
+
 <p align="center">
   <img src="assets/diagram-concept-map.png" width="640" alt="Concept map: Library, Preset, Global Workspace, Project Workspace, Agent" />
 </p>

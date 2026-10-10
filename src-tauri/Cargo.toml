@@ -57,3 +57,6 @@ clap = { version = "4.5", features = ["derive"] }
 
 [target.'cfg(windows)'.dependencies]
 junction = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
