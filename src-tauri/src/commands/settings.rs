@@ -167,6 +167,7 @@ pub async fn check_app_update(
 
         let resp: serde_json::Value = client
             .get("https://api.github.com/repos/xingkongliang/skills-manager/releases/latest")
+            .header("X-GitHub-Api-Version", "2026-03-10")
             .send()
             .map_err(|e| AppError::network(format!("Network error: {e}")))?
             .json()
